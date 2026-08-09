@@ -2,9 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, orderBy, setDoc, doc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Transaction, TransactionCategory, TransactionAccount } from '../types';
-import { Plus, X, ArrowUpRight, ArrowDownRight, Wallet, PieChart, Landmark, CreditCard, Banknote, MoreVertical, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, X, ArrowUpRight, ArrowDownRight, Wallet, PieChart, Landmark, CreditCard, Banknote, MoreVertical, Edit2, Trash2, ChevronLeft, ChevronRight, Download, FileText, FileSpreadsheet } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const CATEGORIES: TransactionCategory[] = [
   'Food & Dining', 'Groceries', 'Fitness', 'Software & Tools', 
@@ -38,6 +41,8 @@ export default function ExpenseTrackerView() {
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   
+  const [viewMode, setViewMode] = useState<'all' | 'ledger'>('all');
+  const [selectedLedger, setSelectedLedger] = useState<TransactionAccount>('Bank Account');
   // Form state
   const [type, setType] = useState<'Income' | 'Expense' | 'Transfer'>('Expense');
   const [amount, setAmount] = useState<string>('');
@@ -279,6 +284,73 @@ export default function ExpenseTrackerView() {
   const totalPages = Math.ceil(transactions.length / itemsPerPage) || 1;
   const currentTransactions = transactions.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
+  const ledgerTransactions = transactions.filter(txn => {
+    if (txn.type === 'Transfer') {
+      return txn.from_account === selectedLedger || txn.to_account === selectedLedger;
+    }
+    return txn.account === selectedLedger;
+  });
+
+  const ledgerStats = ledgerTransactions.reduce((acc, txn) => {
+    if (txn.type === 'Transfer') {
+      if (txn.to_account === selectedLedger) acc.inflows += Number(txn.amount) || 0;
+      if (txn.from_account === selectedLedger) acc.outflows += Number(txn.amount) || 0;
+    } else if (txn.type === 'Income') {
+      acc.inflows += Number(txn.amount) || 0;
+    } else {
+      acc.outflows += Number(txn.amount) || 0;
+    }
+    return acc;
+  }, { inflows: 0, outflows: 0 });
+
+  const ledgerBalance = ledgerStats.inflows - ledgerStats.outflows;
+
+  const exportToExcel = () => {
+    const data = ledgerTransactions.map(txn => ({
+      'S.No': txn.serial_number || '-',
+      'Date': formatDisplayDate(txn.date),
+      'Description': txn.description,
+      'Category/Transfer': txn.type === 'Transfer' ? 'Transfer' : txn.category,
+      'Type': txn.type === 'Transfer' ? (txn.to_account === selectedLedger ? 'Inflow' : 'Outflow') : txn.type,
+      'Amount': `₹${(Number(txn.amount) || 0).toLocaleString()}`,
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, `${selectedLedger} Ledger`);
+    XLSX.writeFile(wb, `${selectedLedger}_Ledger.xlsx`);
+  };
+
+  const exportToPDF = () => {
+    const doc = new jsPDF();
+    
+    doc.setFontSize(16);
+    doc.text(`${selectedLedger} - Ledger Statement`, 14, 22);
+    
+    doc.setFontSize(10);
+    doc.text(`Total Inflows: ₹${ledgerStats.inflows.toLocaleString()}`, 14, 30);
+    doc.text(`Total Outflows: ₹${ledgerStats.outflows.toLocaleString()}`, 14, 35);
+    doc.text(`Closing Balance: ₹${ledgerBalance.toLocaleString()}`, 14, 40);
+
+    const tableColumn = ["S.No", "Date", "Description", "Category", "Type", "Amount"];
+    const tableRows = ledgerTransactions.map(txn => [
+      txn.serial_number || '-',
+      formatDisplayDate(txn.date),
+      txn.description,
+      txn.type === 'Transfer' ? 'Transfer' : (txn.category || '-'),
+      txn.type === 'Transfer' ? (txn.to_account === selectedLedger ? 'Inflow' : 'Outflow') : txn.type,
+      `Rs. ${Number(txn.amount) || 0}`
+    ]);
+
+    autoTable(doc, {
+      head: [tableColumn],
+      body: tableRows,
+      startY: 45,
+    });
+
+    doc.save(`${selectedLedger}_Ledger.pdf`);
+  };
+
   return (
     <div className="w-full h-full p-6 md:p-8 overflow-y-auto bg-slate-50">
       <div className="max-w-6xl mx-auto space-y-8">
@@ -293,16 +365,38 @@ export default function ExpenseTrackerView() {
             </h2>
             <p className="text-slate-500 mt-1 text-sm font-medium">Manage your finances and track expenses.</p>
           </div>
-          <button
-            onClick={handleOpenAddModal}
-            className="px-6 py-3.5 bg-[#0056D2] hover:bg-blue-700 text-white font-semibold rounded-xl shadow-md shadow-blue-600/20 transition-all active:scale-[0.98] flex items-center gap-2"
-          >
-            <Plus className="w-5 h-5" />
-            Add Transaction
-          </button>
+          <div className="flex items-center gap-4">
+            <div className="bg-slate-100 p-1 rounded-xl flex">
+              <button
+                onClick={() => setViewMode('all')}
+                className={`px-4 py-2 text-sm font-bold rounded-lg transition-all ${
+                  viewMode === 'all' ? 'bg-white text-[#0056D2] shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                All Transactions
+              </button>
+              <button
+                onClick={() => setViewMode('ledger')}
+                className={`px-4 py-2 text-sm font-bold rounded-lg transition-all ${
+                  viewMode === 'ledger' ? 'bg-white text-[#0056D2] shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Ledger View
+              </button>
+            </div>
+            <button
+              onClick={handleOpenAddModal}
+              className="px-6 py-3.5 bg-[#0056D2] hover:bg-blue-700 text-white font-semibold rounded-xl shadow-md shadow-blue-600/20 transition-all active:scale-[0.98] flex items-center gap-2"
+            >
+              <Plus className="w-5 h-5" />
+              Add Transaction
+            </button>
+          </div>
         </div>
 
-        <div className="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-sm flex flex-col">
+        {viewMode === 'all' ? (
+          <>
+            <div className="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-sm flex flex-col">
           <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
             <PieChart className="w-5 h-5 text-blue-500" />
             Expense Allocation
@@ -525,6 +619,149 @@ export default function ExpenseTrackerView() {
             )}
           </div>
         </div>
+        </>
+        ) : (
+          <div className="space-y-6">
+            <div className="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Select Ledger Account</label>
+                <select
+                  value={selectedLedger}
+                  onChange={(e) => setSelectedLedger(e.target.value as TransactionAccount)}
+                  className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0056D2]/20 focus:border-[#0056D2] transition-all text-slate-800 font-bold min-w-[200px]"
+                >
+                  {ACCOUNTS.map(acc => <option key={acc} value={acc}>{acc}</option>)}
+                </select>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={exportToExcel}
+                  className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold rounded-xl transition-all flex items-center gap-2"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  Export Excel
+                </button>
+                <button
+                  onClick={exportToPDF}
+                  className="px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold rounded-xl transition-all flex items-center gap-2"
+                >
+                  <FileText className="w-4 h-4" />
+                  Export PDF
+                </button>
+              </div>
+            </div>
+
+            {/* Ledger Summary Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-sm flex items-center gap-4">
+                <div className="w-12 h-12 bg-green-50 rounded-xl flex items-center justify-center shrink-0">
+                  <ArrowDownRight className="w-6 h-6 text-green-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Total Inflows</p>
+                  <h3 className="text-2xl font-bold text-green-600 mt-1">₹{ledgerStats.inflows.toLocaleString()}</h3>
+                </div>
+              </div>
+              <div className="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-sm flex items-center gap-4">
+                <div className="w-12 h-12 bg-red-50 rounded-xl flex items-center justify-center shrink-0">
+                  <ArrowUpRight className="w-6 h-6 text-red-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Total Outflows</p>
+                  <h3 className="text-2xl font-bold text-red-600 mt-1">₹{ledgerStats.outflows.toLocaleString()}</h3>
+                </div>
+              </div>
+              <div className="bg-white p-6 rounded-2xl border border-slate-200/60 shadow-sm flex items-center gap-4">
+                <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center shrink-0">
+                  <Wallet className="w-6 h-6 text-[#0056D2]" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Net Balance</p>
+                  <h3 className={`text-2xl font-bold mt-1 ${ledgerBalance >= 0 ? 'text-[#0056D2]' : 'text-red-600'}`}>
+                    {ledgerBalance >= 0 ? '' : '-'}₹{Math.abs(ledgerBalance).toLocaleString()}
+                  </h3>
+                </div>
+              </div>
+            </div>
+
+            {/* Ledger Table */}
+            <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden flex flex-col">
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <Landmark className="w-5 h-5 text-slate-500" />
+                  {selectedLedger} Transactions
+                </h3>
+              </div>
+              <div className="overflow-x-auto custom-scrollbar">
+                <table className="w-full text-left border-collapse min-w-[700px]">
+                  <thead>
+                    <tr className="bg-slate-50/80 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                      <th className="px-6 py-4 w-16 text-center">S.No</th>
+                      <th className="px-6 py-4 w-32">Date</th>
+                      <th className="px-6 py-4">Description</th>
+                      <th className="px-6 py-4 w-40">Category/Transfer</th>
+                      <th className="px-6 py-4 text-right w-32">Type</th>
+                      <th className="px-6 py-4 text-right w-32">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {ledgerTransactions.map((txn) => (
+                      <tr key={txn.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 font-medium text-center">
+                          {txn.serial_number || '-'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 font-medium">
+                          {formatDisplayDate(txn.date)}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="font-semibold text-slate-800">{txn.description}</div>
+                          {txn.bank_transaction_id && (
+                            <div className="text-xs text-slate-400 font-mono mt-0.5">ID: {txn.bank_transaction_id}</div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {txn.type && txn.type.toString().trim().toLowerCase() === 'transfer' ? (
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-500">
+                              Transfer
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-600">
+                              {txn.category}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right">
+                          <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium ${
+                            (txn.type === 'Transfer' ? (txn.to_account === selectedLedger) : txn.type === 'Income') ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                          }`}>
+                            {txn.type === 'Transfer' ? (txn.to_account === selectedLedger ? 'Inflow' : 'Outflow') : txn.type}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right">
+                          <div className={`font-bold ${
+                            (txn.type === 'Transfer' ? (txn.to_account === selectedLedger) : txn.type === 'Income') ? 'text-green-600' : 'text-red-600'
+                          }`}>
+                            {(txn.type === 'Transfer' ? (txn.to_account === selectedLedger) : txn.type === 'Income') ? '+' : '-'}₹{(Number(txn.amount) || 0).toLocaleString()}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {ledgerTransactions.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="px-6 py-12 text-center">
+                          <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-100">
+                            <Wallet className="w-8 h-8 text-slate-300" />
+                          </div>
+                          <p className="text-lg font-medium text-slate-600 mb-1">No transactions in this ledger</p>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Modal */}
