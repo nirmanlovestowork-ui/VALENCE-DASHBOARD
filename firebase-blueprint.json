@@ -1,0 +1,85 @@
+{
+  "entities": {
+    "Task": {
+      "title": "Task",
+      "description": "A task in the dashboard",
+      "type": "object",
+      "properties": {
+        "task_name": { "type": "string" },
+        "description": { "type": "string" },
+        "due_date": { "type": "string", "format": "date-time" },
+        "status": { "type": "boolean" },
+        "assignee": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Party": {
+      "title": "Party",
+      "type": "object",
+      "properties": {}
+    },
+    "Service": {
+      "title": "Service",
+      "type": "object",
+      "properties": {}
+    },
+    "Counter": {
+      "title": "Counter",
+      "type": "object",
+      "properties": {}
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "type": "object",
+      "properties": {}
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Financial transaction",
+      "type": "object",
+      "properties": {
+        "serial_number": { "type": "number" },
+        "bank_transaction_id": { "type": "string" },
+        "type": { "type": "string" },
+        "amount": { "type": "number" },
+        "date": { "type": "string", "format": "date-time" },
+        "category": { "type": "string" },
+        "account": { "type": "string" },
+        "description": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "TransactionCategory": {
+      "title": "Transaction Category",
+      "description": "Custom transaction category",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "firestore": {
+    "/tasks/{taskId}": {
+      "schema": { "$ref": "#/entities/Task" }
+    },
+    "/parties/{partyId}": {
+      "schema": { "$ref": "#/entities/Party" }
+    },
+    "/services/{serviceId}": {
+      "schema": { "$ref": "#/entities/Service" }
+    },
+    "/counters/{counterId}": {
+      "schema": { "$ref": "#/entities/Counter" }
+    },
+    "/invoices/{invoiceId}": {
+      "schema": { "$ref": "#/entities/Invoice" }
+    },
+    "/transactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/Transaction" }
+    },
+    "/transaction_categories/{categoryId}": {
+      "schema": { "$ref": "#/entities/TransactionCategory" }
+    }
+  }
+}

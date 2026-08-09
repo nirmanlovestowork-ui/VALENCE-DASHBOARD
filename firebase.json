@@ -1,0 +1,6 @@
+{
+  "firestore": {
+    "database": "ai-studio-partnerdashboard-48f98080-9b34-4f5c-bcd4-64a7674fe643",
+    "rules": "firestore.rules"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Partner Dashboard",
+  "description": "A shared personal dashboard for Bibhu and Admin featuring a split-view todo list with due timings.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

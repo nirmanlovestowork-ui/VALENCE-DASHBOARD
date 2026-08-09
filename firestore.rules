@@ -1,0 +1,26 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /tasks/{taskId} {
+      allow read, write: if true;
+    }
+    match /counters/{counterId} {
+      allow read, write: if true;
+    }
+    match /parties/{partyId} {
+      allow read, write: if true;
+    }
+    match /services/{serviceId} {
+      allow read, write: if true;
+    }
+    match /invoices/{invoiceId} {
+      allow read, write: if true;
+    }
+    match /transactions/{transactionId} {
+      allow read, write: if true;
+    }
+    match /transaction_categories/{categoryId} {
+      allow read, write: if true;
+    }
+  }
+}
